@@ -7,12 +7,24 @@ import { createSession } from "@/lib/auth";
 import { getDb, nowIso } from "@/lib/db";
 import type { ActionResult } from "@/lib/reactions";
 import { fetchLocketProfile } from "@/lib/locket/api";
-import { locketErrorMessage, signInToLocket, type LocketSession } from "@/lib/locket/client";
+import {
+  locketErrorMessage,
+  refreshLocketIdToken,
+  signInToLocket,
+  type LocketSession,
+} from "@/lib/locket/client";
 import { getLocketConfig } from "@/lib/locket/config";
 import { clearLocketCaches } from "@/lib/locket/feed";
 import { saveLocketAccount } from "@/lib/locket/store";
 
 const USERNAME_PATTERN = /^[a-z0-9._]{3,20}$/;
+
+type LocketTokens = {
+  uid: string;
+  idToken: string;
+  refreshToken: string;
+  expiresAt: string;
+};
 
 /** Accepts either an email address or a phone number in E.164 form. */
 function cleanIdentifier(raw: string): string | null {
@@ -42,26 +54,145 @@ function toHandle(candidate: string | undefined): string {
   return USERNAME_PATTERN.test(cleaned) ? cleaned : "";
 }
 
-function uniqueUsername(candidates: (string | undefined)[], uid: string): string {
+async function uniqueUsername(candidates: (string | undefined)[], uid: string): Promise<string> {
   const db = getDb();
   const fallback = `locket${uid.replace(/[^a-z0-9]/gi, "").slice(0, 6).toLowerCase()}`;
   const seed = candidates.map(toHandle).find(Boolean) ?? fallback;
   let candidate = seed;
   let suffix = 1;
 
-  while (db.prepare("select 1 as found from users where username = ?").get(candidate)) {
+  while (
+    await db.prepare("select 1 as found from users where lower(username) = lower(?)").get(candidate)
+  ) {
     suffix += 1;
     const tail = String(suffix);
-    candidate = `${seed.slice(0, 20 - tail.length)}${tail}`;
+    candidate = `${seed.slice(0, Math.max(1, 20 - tail.length))}${tail}`;
   }
 
   return candidate;
 }
 
+/** Reads the e-mail / phone baked into a Firebase ID token (no verification). */
+function claimsFromIdToken(idToken: string): { email: string | null; phone: string | null } {
+  try {
+    const payload = idToken.split(".")[1];
+
+    if (!payload) {
+      return { email: null, phone: null };
+    }
+
+    const json = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
+      email?: string;
+      phone_number?: string;
+    };
+
+    return { email: json.email ?? null, phone: json.phone_number ?? null };
+  } catch {
+    return { email: null, phone: null };
+  }
+}
+
 /**
- * The "just log in" path: signs in against Locket, then reuses the local account
- * already linked to that Locket UID or creates one on the fly, and finally
- * opens a session for it.
+ * Reuses the local account already linked to that Locket UID (or creates one),
+ * stores the fresh tokens and opens a session. Both login paths end up here.
+ */
+async function linkAndOpenSession(
+  tokens: LocketTokens,
+  identifier: { email: string | null; phone: string | null },
+): Promise<ActionResult> {
+  const provisional: LocketSession = {
+    userId: "pending",
+    uid: tokens.uid,
+    idToken: tokens.idToken,
+    refreshToken: tokens.refreshToken,
+  };
+
+  let profile = null;
+
+  try {
+    profile = await fetchLocketProfile(provisional, tokens.uid);
+  } catch {
+    // The login still succeeds without the profile lookup.
+  }
+
+  const db = getDb();
+  const displayName = profile
+    ? `${profile.firstName} ${profile.lastName}`.trim() || profile.username
+    : "";
+  const handle = profile?.username ?? "";
+
+  const linked = (await db
+    .prepare("select user_id from locket_accounts where locket_uid = ?")
+    .get(tokens.uid)) as { user_id: string } | undefined;
+
+  let userId = linked?.user_id ?? null;
+
+  if (!userId && identifier.email) {
+    const existing = (await db
+      .prepare("select id from users where lower(email) = lower(?)")
+      .get(identifier.email)) as { id: string } | undefined;
+
+    userId = existing?.id ?? null;
+  }
+
+  if (!userId && identifier.phone) {
+    const existing = (await db
+      .prepare("select id from users where phone = ?")
+      .get(identifier.phone)) as { id: string } | undefined;
+
+    userId = existing?.id ?? null;
+  }
+
+  if (!userId) {
+    const createdId = randomUUID();
+    const username = await uniqueUsername(
+      [handle, identifier.email?.split("@")[0], identifier.phone ?? undefined, displayName],
+      tokens.uid,
+    );
+
+    await db
+      .prepare(
+        `insert into users (id, email, phone, username, display_name, created_at)
+         values (?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        createdId,
+        identifier.email,
+        identifier.phone,
+        username,
+        displayName || username,
+        nowIso(),
+      );
+
+    userId = createdId;
+  }
+
+  await saveLocketAccount({
+    userId,
+    uid: tokens.uid,
+    email: identifier.email,
+    phone: identifier.phone,
+    displayName: displayName || handle || null,
+    username: handle || null,
+    avatarUrl: profile?.avatarUrl ?? null,
+    idToken: tokens.idToken,
+    idTokenExpiresAt: tokens.expiresAt,
+    refreshToken: tokens.refreshToken,
+  });
+
+  await createSession(userId);
+  clearLocketCaches(userId);
+  revalidatePath("/", "layout");
+
+  return {
+    ok: true,
+    message: handle ? `Welcome back, @${handle}` : "Welcome to Locket.",
+  };
+}
+
+/**
+ * The "just log in" path: signs in against Locket with the account email and
+ * password, then opens a local session automatically.
  */
 export async function locketSignInAction(formData: FormData): Promise<ActionResult> {
   const identifier = cleanIdentifier(String(formData.get("identifier") ?? ""));
@@ -80,84 +211,41 @@ export async function locketSignInAction(formData: FormData): Promise<ActionResu
 
   try {
     const tokens = await signInToLocket(identifier, password);
-    const provisional: LocketSession = {
-      userId: "pending",
-      uid: tokens.uid,
-      idToken: tokens.idToken,
-      refreshToken: tokens.refreshToken,
-    };
-
-    let profile = null;
-
-    try {
-      profile = await fetchLocketProfile(provisional, tokens.uid);
-    } catch {
-      // The login still succeeds without the profile lookup.
-    }
-
-    const db = getDb();
     const isEmail = identifier.includes("@");
-    const email = isEmail ? identifier : null;
-    const phone = isEmail ? null : identifier;
-    const displayName = profile
-      ? `${profile.firstName} ${profile.lastName}`.trim() || profile.username
-      : "";
-    const handle = profile?.username ?? "";
 
-    const linked = (await db
-      .prepare("select user_id from locket_accounts where locket_uid = ?")
-      .get(tokens.uid)) as { user_id: string } | undefined;
-
-    let userId = linked?.user_id ?? null;
-
-    if (!userId) {
-      const existing = (isEmail
-        ? await db.prepare("select id from users where lower(email) = lower(?)").get(email)
-        : await db.prepare("select id from users where phone = ?").get(phone)) as
-        | { id: string }
-        | undefined;
-
-      userId = existing?.id ?? null;
-    }
-
-    if (!userId) {
-      const createdId = randomUUID();
-      const username = uniqueUsername(
-        [handle, isEmail ? identifier.split("@")[0] : "", displayName],
-        tokens.uid,
-      );
-
-      await db
-        .prepare(
-          `insert into users (id, email, phone, username, display_name, created_at)
-           values (?, ?, ?, ?, ?, ?)`,
-        )
-        .run(createdId, email, phone, username, displayName || username, nowIso());
-
-      userId = createdId;
-    }
-
-    await saveLocketAccount({
-      userId,
-      uid: tokens.uid,
-      email,
-      phone,
-      displayName: displayName || handle || null,
-      username: handle || null,
-      avatarUrl: profile?.avatarUrl ?? null,
-      idToken: tokens.idToken,
-      idTokenExpiresAt: tokens.expiresAt,
-      refreshToken: tokens.refreshToken,
+    return await linkAndOpenSession(tokens, {
+      email: isEmail ? identifier : null,
+      phone: isEmail ? null : identifier,
     });
+  } catch (error) {
+    return { ok: false, error: locketErrorMessage(error) };
+  }
+}
 
-    await createSession(userId);
-    clearLocketCaches(userId);
-    revalidatePath("/", "layout");
+/**
+ * Locket accounts created with a phone number have no password (the iOS app
+ * logs in with a one-time code from Locket's own backend). For those, the
+ * session captured from the app is exchanged for a normal web session.
+ */
+export async function locketTokenSignInAction(formData: FormData): Promise<ActionResult> {
+  const refreshToken = String(formData.get("refreshToken") ?? "").trim();
 
-    return {
-      ok: true,
-      message: handle ? `Welcome back, @${handle}` : "Welcome to Locket.",
-    };
+  if (!refreshToken) {
+    return { ok: false, error: "Paste the refresh_token captured from the Locket app." };
+  }
+
+  if (!getLocketConfig().apiKey) {
+    return { ok: false, error: "This server isn't connected to Locket yet. Ask the site owner." };
+  }
+
+  try {
+    const tokens = await refreshLocketIdToken(refreshToken);
+
+    if (!tokens.uid) {
+      return { ok: false, error: "That code didn't return a Locket user. Capture a fresh one." };
+    }
+
+    return await linkAndOpenSession(tokens, claimsFromIdToken(tokens.idToken));
   } catch (error) {
     return { ok: false, error: locketErrorMessage(error) };
   }
