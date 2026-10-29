@@ -74,20 +74,12 @@ export default async function InvitePage({
 
         <div className="mt-9 flex w-full flex-col items-center gap-3">
           {!viewer ? (
-            <>
-              <Link
-                href={`/login?next=/u/${encodeURIComponent(person.username)}`}
-                className="flex h-12 w-full items-center justify-center rounded-2xl bg-gold text-[15px] font-semibold text-black"
-              >
-                Log in to add {person.displayName.split(" ")[0]}
-              </Link>
-              <Link
-                href={`/signup?next=/u/${encodeURIComponent(person.username)}`}
-                className="text-[13px] font-medium text-white/45"
-              >
-                New to Locket? Create an account
-              </Link>
-            </>
+            <Link
+              href={`/login?next=/u/${encodeURIComponent(person.username)}`}
+              className="flex h-12 w-full items-center justify-center rounded-2xl bg-gold text-[15px] font-semibold text-black"
+            >
+              Log in to add {person.displayName.split(" ")[0]}
+            </Link>
           ) : isSelf ? (
             <>
               <p className="text-[14px] text-white/45">This is your Locket link.</p>

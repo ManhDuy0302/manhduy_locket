@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition, type FormEvent } from "react";
 import { Loader2 } from "lucide-react";
@@ -159,13 +158,8 @@ export function LocketLoginForm({ next, configured }: LocketLoginFormProps) {
             : "The session code is stored encrypted and never leaves this server."}
         </p>
 
-        <p className="mt-2 text-center text-[14px] text-white/45">
-          <Link
-            href={next ? `/login/phone?next=${encodeURIComponent(next)}` : "/login/phone"}
-            className="font-semibold text-gold"
-          >
-            Use a phone number instead
-          </Link>
+        <p className="mt-2 text-center text-[12px] leading-relaxed text-white/25">
+          There is no separate sign-up: your Locket account is your login.
         </p>
       </form>
     </div>

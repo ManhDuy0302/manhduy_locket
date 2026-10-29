@@ -6,8 +6,8 @@ import { getCurrentUser } from "@/lib/auth";
 import { describeLocketConfig, ensureConfigLoaded } from "@/lib/locket/config";
 
 /**
- * The default entry point: log in with the account that already exists in the
- * Locket app. A web-only phone account is still available at /login/phone.
+ * Single entry point: log in with the account that already exists in the Locket
+ * app. This app never creates its own accounts.
  */
 export default async function LoginPage({
   searchParams,
