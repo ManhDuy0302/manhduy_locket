@@ -161,10 +161,10 @@ export function LocketLoginForm({ next, configured }: LocketLoginFormProps) {
 
         <p className="mt-2 text-center text-[14px] text-white/45">
           <Link
-            href={next ? `/login?next=${encodeURIComponent(next)}` : "/login"}
+            href={next ? `/login/phone?next=${encodeURIComponent(next)}` : "/login/phone"}
             className="font-semibold text-gold"
           >
-            Use phone or email instead
+            Use a phone number instead
           </Link>
         </p>
       </form>

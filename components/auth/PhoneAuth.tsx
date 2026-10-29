@@ -51,7 +51,7 @@ export function PhoneAuth({ next }: { next?: string }) {
   }, [cooldown]);
 
   const emailHref = next ? `/login/email?next=${encodeURIComponent(next)}` : "/login/email";
-  const locketHref = next ? `/login/locket?next=${encodeURIComponent(next)}` : "/login/locket";
+    const locketHref = next ? `/login?next=${encodeURIComponent(next)}` : "/login";
 
   const requestCode = (value: string) => {
     startTransition(async () => {
@@ -325,7 +325,7 @@ export function PhoneAuth({ next }: { next?: string }) {
 
       <p className="mt-3 text-center text-[14px] text-white/45">
         <Link href={locketHref} className="font-semibold text-gold">
-          Log in with Locket account
+          Log in with your Locket account
         </Link>
       </p>
 
