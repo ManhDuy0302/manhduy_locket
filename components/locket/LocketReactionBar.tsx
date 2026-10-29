@@ -7,7 +7,7 @@ import { Loader2 } from "lucide-react";
 import { reactToLocketMomentAction } from "@/app/actions/locket";
 import { useToast } from "@/components/Toast";
 
-const REACTIONS = ["🔥", "💖", "😂"];
+const REACTIONS = ["❤️", "😂", "😮", "😢", "🔥", "👍"];
 
 type LocketReactionBarProps = {
   momentId: string;
@@ -42,7 +42,7 @@ export function LocketReactionBar({ momentId, ownerUid }: LocketReactionBarProps
   };
 
   return (
-    <div className="mt-2.5 flex items-center justify-center gap-1.5">
+    <div className="mt-2 flex items-center gap-1 px-1">
       {REACTIONS.map((emoji) => (
         <button
           key={emoji}
@@ -50,14 +50,14 @@ export function LocketReactionBar({ momentId, ownerUid }: LocketReactionBarProps
           onClick={() => react(emoji)}
           disabled={pending}
           aria-label={`React with ${emoji}`}
-          className={`flex h-9 w-11 items-center justify-center rounded-full border text-[16px] transition-transform active:scale-95 ${
+          className={`flex h-8 w-[34px] items-center justify-center rounded-full border text-[15px] transition-transform active:scale-95 ${
             sent === emoji
               ? "border-gold/50 bg-gold/15"
-              : "border-white/[0.07] bg-white/[0.045]"
+              : "border-white/[0.06] bg-white/[0.04]"
           } disabled:opacity-60`}
         >
           {pending && sent === emoji ? (
-            <Loader2 size={14} className="animate-spin text-white/60" />
+            <Loader2 size={13} className="animate-spin text-white/60" />
           ) : (
             emoji
           )}

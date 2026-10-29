@@ -9,19 +9,19 @@ type LocketMomentCardProps = {
   priority?: boolean;
 };
 
+/**
+ * Mirrors the Locket moment card: photo first with the time pill in the corner
+ * and the caption on top of it, then the sender row underneath, then reactions.
+ */
 export function LocketMomentCard({ moment, priority = false }: LocketMomentCardProps) {
   return (
     <article className="animate-fade-up">
-      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-[30px] bg-elevated">
+      <div className="relative aspect-[3/4] w-full overflow-hidden rounded-[26px] bg-elevated">
         {moment.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={moment.imageUrl}
-            alt={
-              moment.caption
-                ? moment.caption
-                : `Locket from ${moment.authorName}`
-            }
+            alt={moment.caption ? moment.caption : `Locket from ${moment.authorName}`}
             loading={priority ? "eager" : "lazy"}
             fetchPriority={priority ? "high" : "auto"}
             draggable={false}
@@ -33,24 +33,21 @@ export function LocketMomentCard({ moment, priority = false }: LocketMomentCardP
           </div>
         )}
 
-        <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/35 to-transparent" />
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/35 to-transparent" />
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-20 bg-gradient-to-b from-black/30 to-transparent" />
+
+        <span className="absolute left-2.5 top-2.5 flex items-center gap-1 rounded-full bg-black/45 px-2 py-[3px] text-[11px] font-medium text-white/90 backdrop-blur">
+          <Clock size={10} strokeWidth={2.4} />
+          {clockTime(moment.createdAt)}
+        </span>
 
         {moment.caption ? (
-          <p className="absolute inset-x-5 bottom-12 z-20 line-clamp-3 text-center text-[16px] font-semibold leading-snug text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.55)]">
+          <p className="absolute inset-x-6 bottom-5 text-center text-[17px] font-semibold leading-snug text-white drop-shadow-[0_2px_12px_rgba(0,0,0,0.6)]">
             {moment.caption}
           </p>
         ) : null}
-
-        <div className="absolute inset-x-0 bottom-3 z-20 flex justify-center">
-          <span className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#9C8CF0]/85 to-[#E2A6D8]/85 px-3 py-1 text-[12px] font-medium text-white shadow-[0_4px_18px_rgba(0,0,0,0.25)] backdrop-blur-sm">
-            <Clock size={12} strokeWidth={2.2} />
-            {clockTime(moment.createdAt)}
-          </span>
-        </div>
       </div>
 
-      <div className="mt-3.5 flex items-center justify-center gap-2">
+      <div className="mt-2.5 flex items-center gap-2 px-1">
         {moment.authorAvatar ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -58,15 +55,22 @@ export function LocketMomentCard({ moment, priority = false }: LocketMomentCardP
             alt={moment.authorName}
             loading="lazy"
             draggable={false}
-            className="h-[26px] w-[26px] shrink-0 rounded-full bg-elevated object-cover"
+            className="h-[22px] w-[22px] shrink-0 rounded-full bg-elevated object-cover"
           />
         ) : (
-          <span className="flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#3B3B40] to-[#1D1D21] text-[10px] font-semibold text-white/80">
+          <span className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#3B3B40] to-[#1D1D21] text-[9px] font-semibold text-white/80">
             {(moment.authorName || "?").charAt(0).toUpperCase()}
           </span>
         )}
-        <span className="text-[15px] font-semibold tracking-[-0.01em]">{moment.authorName}</span>
-        <span className="text-[13px] text-white/40">{timeAgo(moment.createdAt)}</span>
+        <span className="truncate text-[13.5px] font-semibold tracking-[-0.01em]">
+          {moment.authorName}
+        </span>
+        <span className="shrink-0 text-[12px] text-white/35">{timeAgo(moment.createdAt)}</span>
+        {moment.isMine ? (
+          <span className="ml-auto shrink-0 rounded-full bg-white/[0.06] px-2 py-0.5 text-[10.5px] font-medium text-white/45">
+            You
+          </span>
+        ) : null}
       </div>
 
       {!moment.isMine && moment.ownerUid ? (

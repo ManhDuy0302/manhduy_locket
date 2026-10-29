@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Camera, Radio } from "lucide-react";
+import { Camera, History, Radio } from "lucide-react";
 
 import { Avatar } from "@/components/Avatar";
 import { LogoMark } from "@/components/Logo";
@@ -21,16 +21,7 @@ export default async function HomePage() {
     <div>
       <header className="safe-top sticky top-0 z-30 bg-black/75 backdrop-blur-2xl">
         <div className="grid h-[58px] grid-cols-[44px_1fr_44px] items-center px-4">
-          <Link href="/" aria-label="Locket home" className="justify-self-start">
-            <LogoMark size={32} />
-          </Link>
-          <div className="flex justify-center">
-            <span className="flex items-center gap-1.5 rounded-full bg-white/[0.06] px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-white/45">
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-              Locket
-            </span>
-          </div>
-          <Link href="/profile" aria-label="Your profile" className="justify-self-end">
+          <Link href="/profile" aria-label="Your profile" className="justify-self-start">
             {account?.avatarUrl ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
@@ -43,6 +34,16 @@ export default async function HomePage() {
             ) : (
               <Avatar person={user} size={34} priority />
             )}
+          </Link>
+          <div className="flex justify-center">
+            <LogoMark size={34} />
+          </div>
+          <Link
+            href="/history"
+            aria-label="History"
+            className="justify-self-end text-white/55"
+          >
+            <History size={22} />
           </Link>
         </div>
       </header>
