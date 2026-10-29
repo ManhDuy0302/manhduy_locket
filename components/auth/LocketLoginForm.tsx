@@ -1,10 +1,14 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition, type FormEvent } from "react";
+import { useState, useTransition, type FormEvent, type MouseEvent } from "react";
 import { Loader2 } from "lucide-react";
 
-import { locketSignInAction, locketTokenSignInAction } from "@/app/actions/locket-login";
+import {
+  locketForgotPasswordAction,
+  locketSignInAction,
+  locketTokenSignInAction,
+} from "@/app/actions/locket-login";
 
 const inputClass =
   "h-[52px] w-full rounded-2xl border border-white/[0.06] bg-elevated px-4 text-[15px] text-white outline-none placeholder:text-white/35 focus:border-gold/60";
@@ -20,6 +24,7 @@ export function LocketLoginForm({ next, configured }: LocketLoginFormProps) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("password");
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const submit = (event: FormEvent<HTMLFormElement>) => {
@@ -54,7 +59,31 @@ export function LocketLoginForm({ next, configured }: LocketLoginFormProps) {
     }
 
     setError(null);
+    setNotice(null);
     setMode(nextMode);
+  };
+
+  const forgotPassword = (event: MouseEvent<HTMLButtonElement>) => {
+    const form = event.currentTarget.form;
+
+    if (!form || pending) {
+      return;
+    }
+
+    const formData = new FormData(form);
+
+    startTransition(async () => {
+      const result = await locketForgotPasswordAction(formData);
+
+      if (!result.ok) {
+        setError(result.error);
+        setNotice(null);
+        return;
+      }
+
+      setError(null);
+      setNotice(result.message ?? "Check your inbox for the reset link.");
+    });
   };
 
   return (
@@ -106,6 +135,15 @@ export function LocketLoginForm({ next, configured }: LocketLoginFormProps) {
               placeholder="Password"
               className={inputClass}
             />
+
+            <button
+              type="button"
+              onClick={forgotPassword}
+              disabled={pending}
+              className="self-end px-1 text-[12.5px] font-medium text-white/45 underline-offset-2 hover:underline"
+            >
+              Forgot password?
+            </button>
           </>
         ) : (
           <>
@@ -140,6 +178,12 @@ export function LocketLoginForm({ next, configured }: LocketLoginFormProps) {
         {error ? (
           <p role="alert" className="px-1 text-[13px] text-red-400">
             {error}
+          </p>
+        ) : null}
+
+        {notice ? (
+          <p role="status" className="px-1 text-[13px] leading-relaxed text-gold">
+            {notice}
           </p>
         ) : null}
 

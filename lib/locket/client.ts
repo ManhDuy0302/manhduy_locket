@@ -109,6 +109,28 @@ function identityHeaders(): Record<string, string> {
 }
 
 /**
+ * Sends Firebase's own password reset email for a Locket account. Useful for
+ * people who only ever signed in with a phone number and never kept a password.
+ */
+export async function requestLocketPasswordReset(email: string): Promise<void> {
+  const config = getLocketConfig();
+
+  const response = await fetch(
+    `https://www.googleapis.com/identitytoolkit/v3/relyingparty/getOobConfirmationCode?key=${encodeURIComponent(config.apiKey)}`,
+    {
+      method: "POST",
+      headers: identityHeaders(),
+      body: JSON.stringify({ requestType: "PASSWORD_RESET", email }),
+      cache: "no-store",
+    },
+  );
+
+  if (!response.ok) {
+    throw firebaseError(response.status, await readJson(response));
+  }
+}
+
+/**
  * The exact header set the iOS client sends to api.locketcamera.com. Locket's
  * edge rejects requests that don't look like the app, and App Check is where
  * most of that gatekeeping lives.

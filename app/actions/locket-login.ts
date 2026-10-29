@@ -10,6 +10,7 @@ import { fetchLocketProfile } from "@/lib/locket/api";
 import {
   locketErrorMessage,
   refreshLocketIdToken,
+  requestLocketPasswordReset,
   signInToLocket,
   type LocketSession,
 } from "@/lib/locket/client";
@@ -205,6 +206,15 @@ export async function locketSignInAction(formData: FormData): Promise<ActionResu
     };
   }
 
+  // Firebase's password endpoint only understands e-mail addresses.
+  if (!identifier.includes("@")) {
+    return {
+      ok: false,
+      error:
+        "Locket's password login needs the email on the account, not the phone number. Use \"Forgot password\" to set one, or the Session code tab.",
+    };
+  }
+
   if (!getLocketConfig().apiKey) {
     return { ok: false, error: "This server isn't connected to Locket yet. Ask the site owner." };
   }
@@ -217,6 +227,38 @@ export async function locketSignInAction(formData: FormData): Promise<ActionResu
       email: isEmail ? identifier : null,
       phone: isEmail ? null : identifier,
     });
+  } catch (error) {
+    return { ok: false, error: locketErrorMessage(error) };
+  }
+}
+
+/**
+ * Sends Locket's own password reset email, so people who only ever signed in
+ * with a phone number can set a password and use the email login.
+ */
+export async function locketForgotPasswordAction(formData: FormData): Promise<ActionResult> {
+  const email = String(formData.get("identifier") ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) {
+    return {
+      ok: false,
+      error: "Type the email attached to your Locket account, then press Forgot password.",
+    };
+  }
+
+  if (!getLocketConfig().apiKey) {
+    return { ok: false, error: "This server isn't connected to Locket yet. Ask the site owner." };
+  }
+
+  try {
+    await requestLocketPasswordReset(email);
+
+    return {
+      ok: true,
+      message: `Locket sent a reset link to ${email}. Open it, set a password, then log in here with that email.`,
+    };
   } catch (error) {
     return { ok: false, error: locketErrorMessage(error) };
   }
