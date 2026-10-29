@@ -36,10 +36,6 @@ export function LocketMomentCard({ moment, priority = false }: LocketMomentCardP
         <div className="pointer-events-none absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/35 to-transparent" />
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-24 bg-gradient-to-t from-black/35 to-transparent" />
 
-        <span className="absolute left-3 top-3 z-20 flex items-center gap-1.5 rounded-full bg-black/45 px-2.5 py-1 text-[10.5px] font-semibold uppercase tracking-[0.08em] text-gold backdrop-blur">
-          Live
-        </span>
-
         {moment.caption ? (
           <p className="absolute inset-x-5 bottom-12 z-20 line-clamp-3 text-center text-[16px] font-semibold leading-snug text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.55)]">
             {moment.caption}

@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ChevronRight, LogOut, Radio, UsersRound } from "lucide-react";
+import { ChevronRight, LogOut, Radio } from "lucide-react";
 
 import { CopyInviteLink } from "@/components/CopyInviteLink";
 import { PageHeader } from "@/components/PageHeader";
@@ -7,11 +7,13 @@ import { AvatarUploader } from "@/components/profile/AvatarUploader";
 import { EditNameRow } from "@/components/profile/ProfileRows";
 import { signOutAction } from "@/app/actions/auth";
 import { requireUser } from "@/lib/auth";
-import { getFriendCount } from "@/lib/data";
+import { getLocketAccount } from "@/lib/locket/store";
 
 export default async function ProfilePage() {
   const user = await requireUser();
-    const friendCount = await getFriendCount(user.id);
+  const account = await getLocketAccount(user.id);
+  const displayName = account?.displayName ?? user.displayName;
+  const handle = account?.username ?? user.username;
 
   return (
     <div>
@@ -19,22 +21,32 @@ export default async function ProfilePage() {
 
       <main className="px-4 pb-8 pt-7">
         <div className="flex flex-col items-center">
-          <AvatarUploader person={user} />
-          <h2 className="mt-4 text-[23px] font-semibold tracking-[-0.02em]">
-            {user.displayName}
-          </h2>
-          <p className="mt-0.5 text-[14px] text-white/40">@{user.username}</p>
-          <Link
-            href="/friends"
-            className="mt-3 flex items-center gap-1.5 rounded-full bg-white/[0.05] px-3 py-1.5 text-[12.5px] font-medium text-white/55"
-          >
-            <UsersRound size={13} />
-            {friendCount} {friendCount === 1 ? "friend" : "friends"}
-          </Link>
+          {account?.avatarUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={account.avatarUrl}
+              alt={displayName}
+              width={92}
+              height={92}
+              className="h-[92px] w-[92px] rounded-full bg-elevated object-cover"
+            />
+          ) : (
+            <AvatarUploader person={user} />
+          )}
+
+          <h2 className="mt-4 text-[23px] font-semibold tracking-[-0.02em]">{displayName}</h2>
+          <p className="mt-0.5 text-[14px] text-white/40">@{handle}</p>
+
+          {account ? (
+            <span className="mt-3 flex items-center gap-1.5 rounded-full bg-gold/10 px-3 py-1.5 text-[12.5px] font-medium text-gold">
+              <Radio size={13} />
+              Connected to Locket
+            </span>
+          ) : null}
         </div>
 
         <div className="mt-8 space-y-2">
-          <EditNameRow name={user.displayName} />
+          {!account ? <EditNameRow name={user.displayName} /> : null}
 
           <Link
             href="/history"
@@ -55,7 +67,7 @@ export default async function ProfilePage() {
             <ChevronRight size={18} className="text-white/35" />
           </Link>
 
-          <CopyInviteLink username={user.username} />
+          {!account ? <CopyInviteLink username={user.username} /> : null}
         </div>
 
         <form action={signOutAction} className="mt-7">
