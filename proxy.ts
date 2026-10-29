@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import { SESSION_COOKIE } from "@/lib/session-cookie";
 
-const PUBLIC_PREFIXES = ["/login", "/u/", "/api/"];
+const PUBLIC_PREFIXES = ["/login", "/u/", "/api/", "/manifest", "/icon-", "/apple-icon"];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
