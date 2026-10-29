@@ -43,3 +43,7 @@ next-env.d.ts
 
 # locket data (sqlite database + uploaded photos)
 /.data
+
+.vercel
+.env*
+!.env.example
