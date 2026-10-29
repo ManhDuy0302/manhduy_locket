@@ -5,7 +5,7 @@ import { getNotificationBadge } from "@/lib/data";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await requireUser();
-  const badge = getNotificationBadge(user);
+    const badge = await getNotificationBadge(user);
 
   return (
     <div className="min-h-dvh bg-black">

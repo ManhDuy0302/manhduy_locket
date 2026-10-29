@@ -76,7 +76,7 @@ export async function createSession(userId: string): Promise<void> {
   const token = randomBytes(32).toString("base64url");
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
 
-  getDb()
+  await getDb()
     .prepare(
       "insert into sessions (token_hash, user_id, created_at, expires_at) values (?, ?, ?, ?)",
     )
@@ -99,7 +99,7 @@ export async function destroySession(): Promise<void> {
   const token = store.get(SESSION_COOKIE)?.value;
 
   if (token) {
-    getDb().prepare("delete from sessions where token_hash = ?").run(hashToken(token));
+    await getDb().prepare("delete from sessions where token_hash = ?").run(hashToken(token));
   }
 
   store.delete(SESSION_COOKIE);
@@ -113,7 +113,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
     return null;
   }
 
-  const row = getDb()
+  const row = (await getDb()
     .prepare(
       `select u.id, u.email, u.phone, u.username, u.display_name, u.avatar_file,
               u.notifications_read_at, u.created_at
@@ -121,7 +121,7 @@ export const getCurrentUser = cache(async (): Promise<SessionUser | null> => {
        join users u on u.id = s.user_id
        where s.token_hash = ? and s.expires_at > ?`,
     )
-    .get(hashToken(token), nowIso()) as UserRow | undefined;
+    .get(hashToken(token), nowIso())) as UserRow | undefined;
 
   return row ? toSessionUser(row) : null;
 });

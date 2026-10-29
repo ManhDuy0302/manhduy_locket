@@ -255,7 +255,7 @@ export async function refreshLocketIdToken(refreshToken: string): Promise<Locket
 
 /** Loads the stored session, refreshing the ID token when it is about to expire. */
 export async function getLocketSession(userId: string): Promise<LocketSession> {
-  const account = getLocketAccount(userId);
+  const account = await getLocketAccount(userId);
 
   if (!account) {
     throw new LocketError("This account isn't linked to Locket yet.", { code: "NOT_LINKED" });
@@ -273,7 +273,7 @@ export async function getLocketSession(userId: string): Promise<LocketSession> {
   }
 
   const tokens = await refreshLocketIdToken(account.refreshToken);
-  updateLocketTokens(userId, {
+  await updateLocketTokens(userId, {
     idToken: tokens.idToken,
     idTokenExpiresAt: tokens.expiresAt,
     refreshToken: tokens.refreshToken,

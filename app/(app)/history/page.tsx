@@ -9,7 +9,7 @@ import { dayLabel, mediaUrl } from "@/lib/format";
 
 export default async function HistoryPage() {
   const user = await requireUser();
-  const moments = getHistoryMoments(user.id);
+    const moments = await getHistoryMoments(user.id);
 
   const grouped = new Map<string, HistoryGroup>();
 

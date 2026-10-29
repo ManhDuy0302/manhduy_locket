@@ -11,7 +11,7 @@ import { getFriendCount } from "@/lib/data";
 
 export default async function ProfilePage() {
   const user = await requireUser();
-  const friendCount = getFriendCount(user.id);
+    const friendCount = await getFriendCount(user.id);
 
   return (
     <div>

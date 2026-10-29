@@ -104,18 +104,18 @@ export async function locketSignInAction(formData: FormData): Promise<ActionResu
       : "";
     const handle = profile?.username ?? "";
 
-    const linked = db
+    const linked = (await db
       .prepare("select user_id from locket_accounts where locket_uid = ?")
-      .get(tokens.uid) as { user_id: string } | undefined;
+      .get(tokens.uid)) as { user_id: string } | undefined;
 
     let userId = linked?.user_id ?? null;
 
     if (!userId) {
-      const existing = (
-        isEmail
-          ? db.prepare("select id from users where email = ?").get(email)
-          : db.prepare("select id from users where phone = ?").get(phone)
-      ) as { id: string } | undefined;
+      const existing = (isEmail
+        ? await db.prepare("select id from users where lower(email) = lower(?)").get(email)
+        : await db.prepare("select id from users where phone = ?").get(phone)) as
+        | { id: string }
+        | undefined;
 
       userId = existing?.id ?? null;
     }
@@ -127,15 +127,17 @@ export async function locketSignInAction(formData: FormData): Promise<ActionResu
         tokens.uid,
       );
 
-      db.prepare(
-        `insert into users (id, email, phone, username, display_name, created_at)
-         values (?, ?, ?, ?, ?, ?)`,
-      ).run(createdId, email, phone, username, displayName || username, nowIso());
+      await db
+        .prepare(
+          `insert into users (id, email, phone, username, display_name, created_at)
+           values (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(createdId, email, phone, username, displayName || username, nowIso());
 
       userId = createdId;
     }
 
-    saveLocketAccount({
+    await saveLocketAccount({
       userId,
       uid: tokens.uid,
       email,

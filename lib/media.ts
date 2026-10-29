@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 
-import { UPLOAD_DIR } from "./db";
+import { getDb, nowIso } from "./db";
 
 export const MAX_UPLOAD_BYTES = 12 * 1024 * 1024;
 
@@ -42,6 +40,11 @@ function detectImage(buffer: Uint8Array): ImageKind | null {
   return null;
 }
 
+/**
+ * Photos live in Postgres (`media` table) so the app can run on hosts without a
+ * writable disk. Each file keeps its `uuid.ext` name, which makes the media
+ * route and the delete path unchanged.
+ */
 export async function storeImage(
   file: File,
 ): Promise<{ file: string } | { error: string }> {
@@ -61,9 +64,11 @@ export async function storeImage(
   }
 
   const name = `${randomUUID()}.${kind.extension}`;
+  const contentType = CONTENT_TYPES[kind.extension] ?? "application/octet-stream";
 
-  await mkdir(UPLOAD_DIR, { recursive: true });
-  await writeFile(join(/* turbopackIgnore: true */ UPLOAD_DIR, name), buffer);
+  await getDb()
+    .prepare("insert into media (id, content_type, bytes, data, created_at) values (?, ?, ?, ?, ?)")
+    .run(name, contentType, buffer.byteLength, Buffer.from(buffer), nowIso());
 
   return { file: name };
 }
@@ -75,20 +80,19 @@ export async function readUpload(
     return null;
   }
 
-  try {
-    const file = await readFile(join(/* turbopackIgnore: true */ UPLOAD_DIR, name));
-    const data = new Uint8Array(file.byteLength);
-    data.set(file);
+  const row = (await getDb()
+    .prepare("select data, content_type from media where id = ?")
+    .get(name)) as { data: Buffer; content_type: string } | undefined;
 
-    const extension = name.split(".").pop() ?? "jpg";
-
-    return {
-      data,
-      contentType: CONTENT_TYPES[extension] ?? "application/octet-stream",
-    };
-  } catch {
+  if (!row) {
     return null;
   }
+
+  const source = Buffer.isBuffer(row.data) ? row.data : Buffer.from(row.data as unknown as string);
+  const data = new Uint8Array(source.byteLength);
+  data.set(source);
+
+  return { data, contentType: row.content_type };
 }
 
 export async function deleteUpload(name: string | null): Promise<void> {
@@ -96,9 +100,5 @@ export async function deleteUpload(name: string | null): Promise<void> {
     return;
   }
 
-  try {
-    await unlink(join(/* turbopackIgnore: true */ UPLOAD_DIR, name));
-  } catch {
-    // The file is already gone, nothing to clean up.
-  }
+  await getDb().prepare("delete from media where id = ?").run(name);
 }

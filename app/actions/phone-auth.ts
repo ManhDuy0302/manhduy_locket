@@ -87,14 +87,14 @@ export async function requestPhoneCode(input: string): Promise<RequestCodeResult
   const now = Date.now();
   const nowStamp = new Date(now).toISOString();
 
-  db.prepare(
+  await db.prepare(
     `delete from phone_codes
      where expires_at <= ? and (signup_expires_at is null or signup_expires_at <= ?)`,
   ).run(nowStamp, nowStamp);
 
-  const row = db
+  const row = (await db
     .prepare("select * from phone_codes where phone = ?")
-    .get(phone) as CodeRow | undefined;
+    .get(phone)) as CodeRow | undefined;
 
   if (row) {
     const waited = now - Date.parse(row.last_sent_at);
@@ -133,7 +133,7 @@ export async function requestPhoneCode(input: string): Promise<RequestCodeResult
   const windowStartedAt = row && windowOpen ? row.window_started_at : nowStamp;
   const sendCount = (row && windowOpen ? row.send_count : 0) + 1;
 
-  db.prepare(
+  await db.prepare(
     `insert into phone_codes
        (phone, code_hash, expires_at, attempts, last_sent_at, send_count, window_started_at)
      values (?, ?, ?, 0, ?, ?, ?)
@@ -177,21 +177,21 @@ export async function verifyPhoneCode(
 
   const db = getDb();
   const now = Date.now();
-  const row = db
+  const row = (await db
     .prepare("select * from phone_codes where phone = ?")
-    .get(phone) as CodeRow | undefined;
+    .get(phone)) as CodeRow | undefined;
 
   if (!row) {
     return { ok: false, error: "That code expired. Request a new one." };
   }
 
   if (Date.parse(row.expires_at) <= now) {
-    db.prepare("delete from phone_codes where phone = ?").run(phone);
+    await db.prepare("delete from phone_codes where phone = ?").run(phone);
     return { ok: false, error: "That code expired. Request a new one." };
   }
 
   if (row.attempts >= MAX_ATTEMPTS) {
-    db.prepare("delete from phone_codes where phone = ?").run(phone);
+    await db.prepare("delete from phone_codes where phone = ?").run(phone);
     return { ok: false, error: "Too many tries. Request a new code." };
   }
 
@@ -199,30 +199,30 @@ export async function verifyPhoneCode(
     const attempts = row.attempts + 1;
 
     if (attempts >= MAX_ATTEMPTS) {
-      db.prepare("delete from phone_codes where phone = ?").run(phone);
+      await db.prepare("delete from phone_codes where phone = ?").run(phone);
       return { ok: false, error: "Too many tries. Request a new code." };
     }
 
-    db.prepare("update phone_codes set attempts = ? where phone = ?").run(
+    await db.prepare("update phone_codes set attempts = ? where phone = ?").run(
       attempts,
       phone,
     );
     return { ok: false, error: "That code isn't right. Try again." };
   }
 
-  const user = db.prepare("select id from users where phone = ?").get(phone) as
+  const user = (await db.prepare("select id from users where phone = ?").get(phone)) as
     | { id: string }
     | undefined;
 
   if (user) {
-    db.prepare("delete from phone_codes where phone = ?").run(phone);
+    await db.prepare("delete from phone_codes where phone = ?").run(phone);
     await createSession(user.id);
     redirect(safeNext(next) ?? "/");
   }
 
   const signupToken = randomBytes(24).toString("base64url");
 
-  db.prepare(
+  await db.prepare(
     `update phone_codes set signup_token = ?, signup_expires_at = ?, attempts = 0
      where phone = ?`,
   ).run(
@@ -255,9 +255,9 @@ export async function completePhoneSignup(
   }
 
   const db = getDb();
-  const row = db
+  const row = (await db
     .prepare("select * from phone_codes where phone = ?")
-    .get(phone) as CodeRow | undefined;
+    .get(phone)) as CodeRow | undefined;
 
   if (
     !row ||
@@ -269,9 +269,11 @@ export async function completePhoneSignup(
     return { ok: false, error: "Your verification expired. Start again." };
   }
 
-  const takenPhone = db.prepare("select 1 as found from users where phone = ?").get(phone);
-  const takenUsername = db
-    .prepare("select 1 as found from users where username = ?")
+  const takenPhone = await db
+    .prepare("select 1 as found from users where phone = ?")
+    .get(phone);
+  const takenUsername = await db
+    .prepare("select 1 as found from users where lower(username) = lower(?)")
     .get(username);
 
   if (takenPhone) {
@@ -285,15 +287,17 @@ export async function completePhoneSignup(
   const id = randomUUID();
 
   try {
-    db.prepare(
-      `insert into users (id, phone, username, display_name, created_at)
-       values (?, ?, ?, ?, ?)`,
-    ).run(id, phone, username, displayName, nowIso());
+    await db
+      .prepare(
+        `insert into users (id, phone, username, display_name, created_at)
+         values (?, ?, ?, ?, ?)`,
+      )
+      .run(id, phone, username, displayName, nowIso());
   } catch {
     return { ok: false, error: "We couldn't create your account. Try again." };
   }
 
-  db.prepare("delete from phone_codes where phone = ?").run(phone);
+  await db.prepare("delete from phone_codes where phone = ?").run(phone);
   await createSession(id);
   redirect(safeNext(input.next) ?? "/friends");
 }

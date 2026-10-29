@@ -19,7 +19,7 @@ export default async function InvitePage({
   params: Promise<{ username: string }>;
 }) {
   const { username } = await params;
-  const person = getUserByUsername(decodeURIComponent(username).replace(/^@/, ""));
+    const person = await getUserByUsername(decodeURIComponent(username).replace(/^@/, ""));
 
   if (!person) {
     return (
@@ -40,9 +40,9 @@ export default async function InvitePage({
   }
 
   const viewer = await getCurrentUser();
-  const friendCount = getFriendCount(person.id);
+  const friendCount = await getFriendCount(person.id);
   const isSelf = viewer?.id === person.id;
-  const relationships = viewer ? getRelationships(viewer.id) : null;
+  const relationships = viewer ? await getRelationships(viewer.id) : null;
   const isFriend = relationships?.friends.has(person.id) ?? false;
   const incoming = relationships?.incoming.has(person.id) ?? false;
   const outgoing = relationships?.outgoing.has(person.id) ?? false;

@@ -22,8 +22,8 @@ export default async function HomePage({
   const user = await requireUser();
   const { scope } = await searchParams;
   const filter = scope === "mine" ? "mine" : "everyone";
-  const friendCount = getFriendCount(user.id);
-  const moments = getFeedMoments(user.id, filter);
+    const friendCount = await getFriendCount(user.id);
+    const moments = await getFeedMoments(user.id, filter);
   const locketFeed = await loadLocketFeed(user.id);
   const hasLiveFeed = locketFeed.connected && locketFeed.moments.length > 0;
 

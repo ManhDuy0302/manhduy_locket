@@ -16,32 +16,32 @@ function refreshApp(): void {
   revalidatePath("/", "layout");
 }
 
-function acceptIncoming(fromId: string, toId: string): void {
+async function acceptIncoming(fromId: string, toId: string): Promise<void> {
   const db = getDb();
   const stamp = nowIso();
 
-  db.exec("begin");
-
-  try {
-    db.prepare(
-      "insert or ignore into friendships (user_id, friend_id, created_at) values (?, ?, ?)",
-    ).run(toId, fromId, stamp);
-    db.prepare(
-      "insert or ignore into friendships (user_id, friend_id, created_at) values (?, ?, ?)",
-    ).run(fromId, toId, stamp);
-    db.prepare(
+  await db
+    .prepare(
+      `insert into friendships (user_id, friend_id, created_at) values (?, ?, ?)
+       on conflict (user_id, friend_id) do nothing`,
+    )
+    .run(toId, fromId, stamp);
+  await db
+    .prepare(
+      `insert into friendships (user_id, friend_id, created_at) values (?, ?, ?)
+       on conflict (user_id, friend_id) do nothing`,
+    )
+    .run(fromId, toId, stamp);
+  await db
+    .prepare(
       "delete from friend_requests where (from_id = ? and to_id = ?) or (from_id = ? and to_id = ?)",
-    ).run(fromId, toId, toId, fromId);
-    db.exec("commit");
-  } catch (error) {
-    db.exec("rollback");
-    throw error;
-  }
+    )
+    .run(fromId, toId, toId, fromId);
 }
 
 export async function sendFriendRequest(username: string): Promise<ActionResult> {
   const user = await requireUser();
-  const target = getUserByUsername(username.trim().toLowerCase());
+  const target = await getUserByUsername(username.trim().toLowerCase());
 
   if (!target) {
     return { ok: false, error: "We couldn't find that username." };
@@ -51,35 +51,38 @@ export async function sendFriendRequest(username: string): Promise<ActionResult>
     return { ok: false, error: "That's you." };
   }
 
-  if (areFriends(user.id, target.id)) {
+  if (await areFriends(user.id, target.id)) {
     return { ok: false, error: "You're already friends." };
   }
 
   const db = getDb();
-  const incoming = db
+  const incoming = await db
     .prepare("select 1 as found from friend_requests where from_id = ? and to_id = ?")
     .get(target.id, user.id);
 
   if (incoming) {
-    acceptIncoming(target.id, user.id);
+    await acceptIncoming(target.id, user.id);
     refreshApp();
     return { ok: true, message: "You're friends now." };
   }
 
-  if (getFriendCount(user.id) >= MAX_FRIENDS) {
+  if ((await getFriendCount(user.id)) >= MAX_FRIENDS) {
     return {
       ok: false,
       error: `Locket only allows ${MAX_FRIENDS} friends. Remove someone first.`,
     };
   }
 
-  if (getFriendCount(target.id) >= MAX_FRIENDS) {
+  if ((await getFriendCount(target.id)) >= MAX_FRIENDS) {
     return { ok: false, error: "This person already has their 20 friends." };
   }
 
-  db.prepare(
-    "insert or ignore into friend_requests (from_id, to_id, created_at) values (?, ?, ?)",
-  ).run(user.id, target.id, nowIso());
+  await db
+    .prepare(
+      `insert into friend_requests (from_id, to_id, created_at) values (?, ?, ?)
+       on conflict (from_id, to_id) do nothing`,
+    )
+    .run(user.id, target.id, nowIso());
 
   refreshApp();
   return { ok: true, message: "Friend request sent." };
@@ -91,7 +94,7 @@ export async function respondToRequest(
 ): Promise<ActionResult> {
   const user = await requireUser();
   const db = getDb();
-  const request = db
+  const request = await db
     .prepare("select 1 as found from friend_requests where from_id = ? and to_id = ?")
     .get(fromId, user.id);
 
@@ -100,22 +103,21 @@ export async function respondToRequest(
   }
 
   if (accept) {
-    if (getFriendCount(user.id) >= MAX_FRIENDS) {
+    if ((await getFriendCount(user.id)) >= MAX_FRIENDS) {
       return {
         ok: false,
         error: `Locket only allows ${MAX_FRIENDS} friends. Remove someone first.`,
       };
     }
 
-    acceptIncoming(fromId, user.id);
+    await acceptIncoming(fromId, user.id);
     refreshApp();
     return { ok: true, message: "Friend added." };
   }
 
-  db.prepare("delete from friend_requests where from_id = ? and to_id = ?").run(
-    fromId,
-    user.id,
-  );
+  await db
+    .prepare("delete from friend_requests where from_id = ? and to_id = ?")
+    .run(fromId, user.id);
   refreshApp();
   return { ok: true };
 }
@@ -123,7 +125,7 @@ export async function respondToRequest(
 export async function cancelFriendRequest(toId: string): Promise<ActionResult> {
   const user = await requireUser();
 
-  getDb()
+  await getDb()
     .prepare("delete from friend_requests where from_id = ? and to_id = ?")
     .run(user.id, toId);
 
@@ -135,12 +137,16 @@ export async function removeFriend(friendId: string): Promise<ActionResult> {
   const user = await requireUser();
   const db = getDb();
 
-  db.prepare(
-    "delete from friendships where (user_id = ? and friend_id = ?) or (user_id = ? and friend_id = ?)",
-  ).run(user.id, friendId, friendId, user.id);
-  db.prepare(
-    "delete from friend_requests where (from_id = ? and to_id = ?) or (from_id = ? and to_id = ?)",
-  ).run(user.id, friendId, friendId, user.id);
+  await db
+    .prepare(
+      "delete from friendships where (user_id = ? and friend_id = ?) or (user_id = ? and friend_id = ?)",
+    )
+    .run(user.id, friendId, friendId, user.id);
+  await db
+    .prepare(
+      "delete from friend_requests where (from_id = ? and to_id = ?) or (from_id = ? and to_id = ?)",
+    )
+    .run(user.id, friendId, friendId, user.id);
 
   refreshApp();
   return { ok: true, message: "Friend removed." };

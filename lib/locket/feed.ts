@@ -145,7 +145,7 @@ function displayName(profile: LocketProfile | undefined): string {
  * screen should still render the local feed when Locket is unreachable.
  */
 export async function loadLocketFeed(userId: string): Promise<LocketFeedState> {
-  const account = getLocketAccount(userId);
+  const account = await getLocketAccount(userId);
 
   if (!account) {
     return { connected: false, accountLabel: null, moments: [], error: null };
@@ -206,7 +206,7 @@ export async function loadLocketFeed(userId: string): Promise<LocketFeedState> {
 
 /** Friend list straight from Locket's Firestore, used to fill the friends tab. */
 export async function loadLocketFriends(userId: string): Promise<LocketFriendsState> {
-  const account = getLocketAccount(userId);
+  const account = await getLocketAccount(userId);
 
   if (!account) {
     return { connected: false, friends: [], error: null };

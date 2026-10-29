@@ -2,15 +2,13 @@ import { LOCKET_DEFAULTS } from "./defaults";
 import { readSetting, writeSetting } from "./store";
 
 /**
- * Locket talks to Locket's own Firebase project (locket-4252a). Nothing in this
- * app can work without two things only the operator can provide:
+ * Locket talks to Locket's own Firebase project (locket-4252a). Two things are
+ * needed: the Firebase Web API key baked into the shipped iOS app, and
+ * optionally an X-Firebase-AppCheck JWT.
  *
- * - the Firebase Web API key of that project (starts with "AIza" and is baked
- *   into the shipped iOS app),
- * - an X-Firebase-AppCheck JWT, which the real app obtains from DeviceCheck.
- *   Those tokens are short lived, so they must be refreshed from a device.
- *
- * Values can come from .env or be pasted at /locket. Saved values win.
+ * Values come from .env or from what the operator pasted at /locket. The saved
+ * copy lives in Postgres, so it is cached in memory once per server process and
+ * refreshed whenever it is written.
  */
 export type LocketConfig = {
   apiBase: string;
@@ -33,9 +31,10 @@ const SETTINGS_KEY = "locket.config";
 
 type SavedConfig = Partial<Record<keyof LocketConfig, string>>;
 
-function readSavedConfig(): SavedConfig {
-  const raw = readSetting(SETTINGS_KEY);
+let savedConfig: SavedConfig | null = null;
+let loadPromise: Promise<void> | null = null;
 
+function parse(raw: string | null): SavedConfig {
   if (!raw) {
     return {};
   }
@@ -47,6 +46,26 @@ function readSavedConfig(): SavedConfig {
   } catch {
     return {};
   }
+}
+
+/** Reads the saved settings once per process (called at boot and before writes). */
+export async function ensureConfigLoaded(): Promise<void> {
+  if (savedConfig) {
+    return;
+  }
+
+  loadPromise ??= (async () => {
+    savedConfig = parse(await readSetting(SETTINGS_KEY));
+  })().catch((error) => {
+    loadPromise = null;
+    throw error;
+  });
+
+  await loadPromise;
+}
+
+function readSavedConfig(): SavedConfig {
+  return savedConfig ?? {};
 }
 
 function pick(saved: string | undefined, env: string | undefined, fallback = ""): string {
@@ -84,14 +103,15 @@ function preview(value: string): string | null {
 
 export function describeLocketConfig(): LocketConfigSummary {
   const config = getLocketConfig();
+  const saved = readSavedConfig();
 
   return {
     config,
     apiKeyPreview: preview(config.apiKey),
     appCheckPreview: preview(config.appCheckToken),
     instanceIdPreview: preview(config.instanceIdToken),
-    apiKeyFromEnv: !readSavedConfig().apiKey && Boolean(process.env.LOCKET_FIREBASE_API_KEY),
-    appCheckFromEnv: !readSavedConfig().appCheckToken && Boolean(process.env.LOCKET_APPCHECK_TOKEN),
+    apiKeyFromEnv: !saved.apiKey && Boolean(process.env.LOCKET_FIREBASE_API_KEY),
+    appCheckFromEnv: !saved.appCheckToken && Boolean(process.env.LOCKET_APPCHECK_TOKEN),
     // Without an API key there is no way to reach Firebase Auth at all.
     ready: Boolean(config.apiKey),
   };
@@ -104,7 +124,9 @@ export type LocketConfigInput = {
   apiBase?: string;
 };
 
-export function saveLocketConfigInput(input: LocketConfigInput): void {
+export async function saveLocketConfigInput(input: LocketConfigInput): Promise<void> {
+  await ensureConfigLoaded();
+
   const current = readSavedConfig();
 
   const next: SavedConfig = {
@@ -115,5 +137,6 @@ export function saveLocketConfigInput(input: LocketConfigInput): void {
     apiBase: input.apiBase?.trim() ?? current.apiBase,
   };
 
-  writeSetting(SETTINGS_KEY, JSON.stringify(next));
+  await writeSetting(SETTINGS_KEY, JSON.stringify(next));
+  savedConfig = next;
 }

@@ -6,7 +6,10 @@ import { getDb } from "../db";
  * allowed; when it is empty the first account that ever signed up counts as the
  * owner.
  */
-export function isLocketAdmin(user: { id: string; username: string }): boolean {
+export async function isLocketAdmin(user: {
+  id: string;
+  username: string;
+}): Promise<boolean> {
   const allowed = (process.env.ADMIN_USERNAMES ?? "")
     .split(",")
     .map((value) => value.trim().replace(/^@/, "").toLowerCase())
@@ -16,9 +19,9 @@ export function isLocketAdmin(user: { id: string; username: string }): boolean {
     return allowed.includes(user.username.toLowerCase());
   }
 
-  const first = getDb()
+  const first = (await getDb()
     .prepare("select id from users order by created_at asc, id asc limit 1")
-    .get() as { id: string } | undefined;
+    .get()) as { id: string } | undefined;
 
   return first?.id === user.id;
 }

@@ -5,9 +5,9 @@ import { getLocketAccount } from "@/lib/locket/store";
 
 export default async function CameraPage() {
   const user = await requireUser();
-  const friendCount = getFriendCount(user.id);
-  const latestFile = getLatestMomentFile(user.id);
-  const locketLinked = Boolean(getLocketAccount(user.id));
+    const friendCount = await getFriendCount(user.id);
+    const latestFile = await getLatestMomentFile(user.id);
+    const locketLinked = Boolean(await getLocketAccount(user.id));
 
   return (
     <div className="mx-auto w-full max-w-[460px] md:border-x md:border-white/[0.04]">

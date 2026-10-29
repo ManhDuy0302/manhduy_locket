@@ -1,16 +1,13 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
-
-import { DATA_DIR } from "../db";
 
 /**
  * Firebase refresh tokens are as good as a password: whoever holds one can read
  * and post as the Locket user. They are encrypted with AES-256-GCM before they
- * touch the SQLite file.
+ * touch the database.
  *
- * LOCKET_SECRET keeps the key stable across deployments; without it a random
- * key is generated once inside the data folder.
+ * LOCKET_SECRET keeps the key stable across deployments. Serverless hosts have
+ * no disk to store a generated key, so when LOCKET_SECRET is missing the key is
+ * derived from DATABASE_URL, which is already a deployment secret.
  */
 let cachedKey: Buffer | null = null;
 
@@ -19,31 +16,15 @@ function loadKey(): Buffer {
     return cachedKey;
   }
 
-  const fromEnv = process.env.LOCKET_SECRET?.trim();
+  const secret = process.env.LOCKET_SECRET?.trim() || process.env.DATABASE_URL?.trim();
 
-  if (fromEnv) {
-    cachedKey = createHash("sha256").update(fromEnv).digest();
-    return cachedKey;
+  if (!secret) {
+    throw new Error(
+      "Set LOCKET_SECRET (or DATABASE_URL) before linking a Locket account: the refresh token is stored encrypted.",
+    );
   }
 
-  const secretFile = join(DATA_DIR, "locket-secret");
-
-  try {
-    const stored = Buffer.from(readFileSync(secretFile, "utf8").trim(), "hex");
-
-    if (stored.length === 32) {
-      cachedKey = stored;
-      return cachedKey;
-    }
-  } catch {
-    // First run: the key file does not exist yet.
-  }
-
-  const generated = randomBytes(32);
-  mkdirSync(DATA_DIR, { recursive: true });
-  writeFileSync(secretFile, generated.toString("hex"), { mode: 0o600 });
-
-  cachedKey = generated;
+  cachedKey = createHash("sha256").update(secret).digest();
   return cachedKey;
 }
 

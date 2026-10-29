@@ -9,7 +9,7 @@ import type { ActionResult } from "@/lib/reactions";
 export async function markNotificationsRead(): Promise<void> {
   const user = await requireUser();
 
-  getDb()
+  await getDb()
     .prepare("update users set notifications_read_at = ? where id = ?")
     .run(nowIso(), user.id);
 
@@ -24,7 +24,9 @@ export async function updateDisplayName(name: string): Promise<ActionResult> {
     return { ok: false, error: "Your name should be between 1 and 30 characters." };
   }
 
-  getDb().prepare("update users set display_name = ? where id = ?").run(trimmed, user.id);
+  await getDb()
+    .prepare("update users set display_name = ? where id = ?")
+    .run(trimmed, user.id);
   revalidatePath("/", "layout");
 
   return { ok: true, message: "Name updated." };

@@ -11,7 +11,7 @@ import { mediaUrl, timeAgo } from "@/lib/format";
 
 export default async function NotificationsPage() {
   const user = await requireUser();
-  const items = getNotifications(user);
+    const items = await getNotifications(user);
   const hasUnreadReactions = items.some(
     (item) => item.kind === "reaction" && item.unread,
   );

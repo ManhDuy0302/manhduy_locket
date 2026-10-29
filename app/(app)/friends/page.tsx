@@ -27,10 +27,10 @@ export default async function FriendsPage({
   const { q } = await searchParams;
   const query = (q ?? "").trim();
 
-  const friends = getFriends(user.id);
-  const requests = getIncomingRequests(user.id);
-  const relationships = getRelationships(user.id);
-  const results = query ? searchUsers(user.id, query) : [];
+    const friends = await getFriends(user.id);
+    const requests = await getIncomingRequests(user.id);
+    const relationships = await getRelationships(user.id);
+    const results = query ? await searchUsers(user.id, query) : [];
   const locketFriends = await loadLocketFriends(user.id);
 
   const statusFor = (id: string): FriendStatus => {

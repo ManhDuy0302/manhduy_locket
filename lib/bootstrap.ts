@@ -3,15 +3,15 @@ import { randomBytes, randomUUID, scryptSync } from "node:crypto";
 import { getDb, nowIso } from "./db";
 import { fetchLocketProfile } from "./locket/api";
 import { refreshLocketIdToken, type LocketSession } from "./locket/client";
-import { getLocketConfig } from "./locket/config";
-import { ensureLocketSchema, getLocketAccount, saveLocketAccount } from "./locket/store";
+import { ensureConfigLoaded, getLocketConfig } from "./locket/config";
+import { getLocketAccount, saveLocketAccount } from "./locket/store";
 
 /**
- * First-boot helper for a fresh deployment (Railway, VPS, Fly...).
+ * First-boot helper for a fresh deployment (Vercel, Railway, VPS...).
  *
  * On an empty database it creates the owner account from env vars and, when a
  * captured refresh token is supplied, links the real Locket account straight
- * away. Running it again is a no-op because every step is guarded by a count.
+ * away. Running it again is a no-op because every step is guarded by a check.
  */
 function hashPassword(password: string): string {
   const salt = randomBytes(16).toString("hex");
@@ -24,46 +24,52 @@ export async function runBootstrap(): Promise<void> {
   }
 
   try {
+    await ensureConfigLoaded();
+
     const db = getDb();
-    ensureLocketSchema();
+    const ownerRow = (await db
+      .prepare("select count(*)::int as total from users")
+      .get()) as { total: number } | undefined;
 
-    const ownerCount = (db.prepare("select count(*) as total from users").get() as {
-      total: number;
-    }).total;
+    if ((ownerRow?.total ?? 0) === 0) {
+      const email = process.env.BOOTSTRAP_OWNER_EMAIL?.trim().toLowerCase();
+      const password = process.env.BOOTSTRAP_OWNER_PASSWORD;
 
-    const email = process.env.BOOTSTRAP_OWNER_EMAIL?.trim().toLowerCase();
-    const password = process.env.BOOTSTRAP_OWNER_PASSWORD;
-    let ownerId: string | null = null;
+      if (email && password) {
+        const username =
+          (process.env.BOOTSTRAP_OWNER_USERNAME ?? "owner")
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9._]/g, "")
+            .slice(0, 20) || "owner";
+        const displayName = process.env.BOOTSTRAP_OWNER_NAME?.trim() || "Owner";
 
-    if (ownerCount === 0) {
-      if (!email || !password) {
-        return;
+        await db
+          .prepare(
+            `insert into users (id, email, phone, username, display_name, password_hash, created_at)
+             values (?, ?, null, ?, ?, ?, ?)`,
+          )
+          .run(randomUUID(), email, username, displayName, hashPassword(password), nowIso());
+
+        console.log(`[bootstrap] owner account created: ${email}`);
       }
-
-      ownerId = randomUUID();
-      const username = (process.env.BOOTSTRAP_OWNER_USERNAME ?? "owner")
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9._]/g, "")
-        .slice(0, 20) || "owner";
-      const displayName = process.env.BOOTSTRAP_OWNER_NAME?.trim() || "Owner";
-
-      db.prepare(
-        `insert into users (id, email, phone, username, display_name, password_hash, created_at)
-         values (?, ?, null, ?, ?, ?, ?)`,
-      ).run(ownerId, email, username, displayName, hashPassword(password), nowIso());
-
-      console.log(`[bootstrap] owner account created: ${email}`);
-    } else {
-      const first = db
-        .prepare("select id from users order by created_at asc, id asc limit 1")
-        .get() as { id: string } | undefined;
-      ownerId = first?.id ?? null;
     }
 
     const refreshToken = process.env.BOOTSTRAP_LOCKET_REFRESH_TOKEN?.trim();
 
-    if (!refreshToken || !ownerId || getLocketAccount(ownerId)) {
+    if (!refreshToken) {
+      return;
+    }
+
+    const first = (await db
+      .prepare("select id from users order by created_at asc, id asc limit 1")
+      .get()) as { id: string } | undefined;
+
+    if (!first) {
+      return;
+    }
+
+    if (await getLocketAccount(first.id)) {
       return;
     }
 
@@ -80,7 +86,7 @@ export async function runBootstrap(): Promise<void> {
     }
 
     const session: LocketSession = {
-      userId: ownerId,
+      userId: first.id,
       uid: tokens.uid,
       idToken: tokens.idToken,
       refreshToken: tokens.refreshToken,
@@ -94,8 +100,8 @@ export async function runBootstrap(): Promise<void> {
       // A missing profile only costs the display name.
     }
 
-    saveLocketAccount({
-      userId: ownerId,
+    await saveLocketAccount({
+      userId: first.id,
       uid: tokens.uid,
       email: null,
       phone: null,

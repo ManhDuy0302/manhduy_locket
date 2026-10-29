@@ -37,15 +37,15 @@ export async function signInAction(
   }
 
   const db = getDb();
-  const row = db
-    .prepare("select id, password_hash from users where email = ?")
-    .get(email) as { id: string; password_hash: string | null } | undefined;
+  const row = (await db
+    .prepare("select id, password_hash from users where lower(email) = lower(?)")
+    .get(email)) as { id: string; password_hash: string | null } | undefined;
 
   if (!row || !row.password_hash || !verifyPassword(password, row.password_hash)) {
     return { error: "Wrong email or password." };
   }
 
-  db.prepare("delete from sessions where expires_at <= ?").run(nowIso());
+  await db.prepare("delete from sessions where expires_at <= ?").run(nowIso());
   await createSession(row.id);
 
   redirect(readNext(formData) ?? "/");
@@ -79,11 +79,11 @@ export async function signUpAction(
   }
 
   const db = getDb();
-  const existingEmail = db
-    .prepare("select 1 as found from users where email = ?")
+  const existingEmail = await db
+    .prepare("select 1 as found from users where lower(email) = lower(?)")
     .get(email);
-  const existingUsername = db
-    .prepare("select 1 as found from users where username = ?")
+  const existingUsername = await db
+    .prepare("select 1 as found from users where lower(username) = lower(?)")
     .get(username);
 
   if (existingEmail) {
@@ -96,10 +96,12 @@ export async function signUpAction(
 
   const id = randomUUID();
 
-  db.prepare(
-    `insert into users (id, email, username, display_name, password_hash, created_at)
-     values (?, ?, ?, ?, ?, ?)`,
-  ).run(id, email, username, displayName, hashPassword(password), nowIso());
+  await db
+    .prepare(
+      `insert into users (id, email, username, display_name, password_hash, created_at)
+       values (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(id, email, username, displayName, hashPassword(password), nowIso());
 
   await createSession(id);
   redirect(readNext(formData) ?? "/friends");

@@ -4,14 +4,16 @@ import { PageHeader } from "@/components/PageHeader";
 import { LocketPanel } from "@/components/locket/LocketPanel";
 import { requireUser } from "@/lib/auth";
 import { isLocketAdmin } from "@/lib/locket/admin";
-import { describeLocketConfig } from "@/lib/locket/config";
+import { describeLocketConfig, ensureConfigLoaded } from "@/lib/locket/config";
 import { getLocketAccount } from "@/lib/locket/store";
 
 export default async function LocketAccountPage() {
   const user = await requireUser();
-  const account = getLocketAccount(user.id);
+  await ensureConfigLoaded();
+
+  const account = await getLocketAccount(user.id);
   const setup = describeLocketConfig();
-  const isAdmin = isLocketAdmin(user);
+  const isAdmin = await isLocketAdmin(user);
 
   return (
     <div>

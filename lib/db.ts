@@ -1,30 +1,30 @@
-import { mkdirSync } from "node:fs";
-import { join } from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import postgres from "postgres";
 
 /**
- * Locket stores everything locally in a SQLite database so the app works out
- * of the box. Set LOCKET_DATA_DIR to move the database and the uploaded photos
- * somewhere else (for example a mounted disk on a VPS).
+ * The deployment runs on serverless hosts (Vercel) where there is no writable
+ * disk, so everything lives in Postgres: accounts, moments, uploaded photos and
+ * the Locket connector settings.
+ *
+ * Set DATABASE_URL to a pooled connection string (Supabase "Transaction
+ * pooler", port 6543). Prepared statements are disabled because transaction
+ * pooling does not keep a session between queries.
  */
-export const DATA_DIR = process.env.LOCKET_DATA_DIR
-  ? join(process.env.LOCKET_DATA_DIR)
-  : join(process.cwd(), ".data");
-
-export const UPLOAD_DIR = join(DATA_DIR, "uploads");
-
 const SCHEMA = `
 create table if not exists users (
   id text primary key,
-  email text collate nocase unique,
-  phone text unique,
-  username text not null collate nocase unique,
+  email text,
+  phone text,
+  username text not null,
   display_name text not null,
   password_hash text,
   avatar_file text,
   notifications_read_at text,
   created_at text not null
 );
+
+create unique index if not exists users_email_key on users (lower(email));
+create unique index if not exists users_phone_key on users (phone);
+create unique index if not exists users_username_key on users (lower(username));
 
 create table if not exists phone_codes (
   phone text primary key,
@@ -83,78 +83,117 @@ create table if not exists moment_reactions (
 );
 
 create index if not exists moment_reactions_user_idx on moment_reactions (user_id);
+
+-- Uploaded photos are stored as bytes because serverless hosts have no disk.
+create table if not exists media (
+  id text primary key,
+  content_type text not null,
+  bytes integer not null,
+  data bytea not null,
+  created_at text not null
+);
+
+create table if not exists app_settings (
+  key text primary key,
+  value text not null,
+  updated_at text not null
+);
+
+create table if not exists locket_accounts (
+  user_id text primary key references users (id) on delete cascade,
+  locket_uid text not null,
+  email text,
+  phone text,
+  display_name text,
+  username text,
+  avatar_url text,
+  id_token text,
+  id_token_expires_at text,
+  refresh_token text not null,
+  linked_at text not null
+);
 `;
 
-type GlobalWithDb = typeof globalThis & { __locketDb?: DatabaseSync };
+type Row = Record<string, unknown>;
 
-/**
- * Earlier versions only supported email accounts. Rebuild the table once so
- * phone numbers can be used on their own (email and password become optional).
- */
-function migratePhoneAuth(db: DatabaseSync) {
-  const columns = db.prepare("pragma table_info(users)").all() as { name: string }[];
+export type PreparedStatement = {
+  get: (...params: unknown[]) => Promise<Row | undefined>;
+  all: (...params: unknown[]) => Promise<Row[]>;
+  run: (...params: unknown[]) => Promise<void>;
+};
 
-  if (columns.some((column) => column.name === "phone")) {
-    return;
+type GlobalStore = typeof globalThis & {
+  __locketSql?: postgres.Sql;
+  __locketSchema?: Promise<void>;
+};
+
+function connect(): postgres.Sql {
+  const connectionString = process.env.DATABASE_URL;
+
+  if (!connectionString) {
+    throw new Error(
+      "DATABASE_URL is missing. Point it at a Postgres database (Supabase, Neon...).",
+    );
   }
 
-  db.exec("pragma foreign_keys = off");
-
-  try {
-    db.exec("begin");
-    db.exec(`
-      create table users_with_phone (
-        id text primary key,
-        email text collate nocase unique,
-        phone text unique,
-        username text not null collate nocase unique,
-        display_name text not null,
-        password_hash text,
-        avatar_file text,
-        notifications_read_at text,
-        created_at text not null
-      )
-    `);
-    db.exec(`
-      insert into users_with_phone
-        (id, email, username, display_name, password_hash, avatar_file, notifications_read_at, created_at)
-      select id, email, username, display_name, password_hash, avatar_file, notifications_read_at, created_at
-      from users
-    `);
-    db.exec("drop table users");
-    db.exec("alter table users_with_phone rename to users");
-    db.exec("commit");
-  } catch (error) {
-    db.exec("rollback");
-    throw error;
-  } finally {
-    db.exec("pragma foreign_keys = on");
-  }
-
-  const broken = db.prepare("pragma foreign_key_check").all();
-
-  if (broken.length > 0) {
-    throw new Error("Phone login migration broke existing rows.");
-  }
+  return postgres(connectionString, {
+    prepare: false,
+    max: 3,
+    idle_timeout: 20,
+    connect_timeout: 15,
+  });
 }
 
-export function getDb(): DatabaseSync {
-  const globalStore = globalThis as GlobalWithDb;
+export function getSql(): postgres.Sql {
+  const store = globalThis as GlobalStore;
+  store.__locketSql ??= connect();
+  return store.__locketSql;
+}
 
-  if (!globalStore.__locketDb) {
-    mkdirSync(UPLOAD_DIR, { recursive: true });
+/** Creates the tables once per server process. */
+export function ensureSchema(): Promise<void> {
+  const store = globalThis as GlobalStore;
+  store.__locketSchema ??= (async () => {
+    await getSql().unsafe(SCHEMA);
+  })().catch((error) => {
+    // Let the next request retry instead of caching a permanent failure.
+    store.__locketSchema = undefined;
+    throw error;
+  });
 
-    const db = new DatabaseSync(join(DATA_DIR, "locket.db"));
-    db.exec("pragma journal_mode = wal");
-    db.exec("pragma foreign_keys = on");
-    db.exec("pragma busy_timeout = 5000");
-    db.exec(SCHEMA);
-    migratePhoneAuth(db);
+  return store.__locketSchema;
+}
 
-    globalStore.__locketDb = db;
-  }
+/** Turns sqlite style `?` placeholders into Postgres `$1, $2...`. */
+function toPlaceholders(text: string): string {
+  let index = 0;
+  return text.replace(/\?/g, () => `$${++index}`);
+}
 
-  return globalStore.__locketDb;
+/**
+ * Keeps the familiar `prepare(...).get/all/run` shape used across the app while
+ * running on Postgres. Every call is async now, so callers await it.
+ */
+export function getDb(): { prepare: (text: string) => PreparedStatement } {
+  return {
+    prepare(text: string): PreparedStatement {
+      const query = toPlaceholders(text);
+
+      const execute = async (params: unknown[]): Promise<Row[]> => {
+        await ensureSchema();
+        const rows = await getSql().unsafe(query, params as never[]);
+        return rows as unknown as Row[];
+      };
+
+      return {
+        get: async (...params: unknown[]) => (await execute(params))[0],
+        all: async (...params: unknown[]) => execute(params),
+        run: async (...params: unknown[]) => {
+          await execute(params);
+        },
+      };
+    },
+  };
 }
 
 export function nowIso(): string {

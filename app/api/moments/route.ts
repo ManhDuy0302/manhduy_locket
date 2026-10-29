@@ -39,7 +39,7 @@ export async function POST(request: Request): Promise<Response> {
   const id = randomUUID();
   const createdAt = nowIso();
 
-  getDb()
+  await getDb()
     .prepare("insert into moments (id, user_id, file, created_at) values (?, ?, ?, ?)")
     .run(id, user.id, stored.file, createdAt);
 
@@ -47,7 +47,7 @@ export async function POST(request: Request): Promise<Response> {
   // local copy, it is reported back so the camera can say what happened.
   let locket: { ok: boolean; id?: string; error?: string } | null = null;
 
-  if (formData.get("toLocket") === "1" && getLocketAccount(user.id)) {
+  if (formData.get("toLocket") === "1" && (await getLocketAccount(user.id))) {
     try {
       const session = await getLocketSession(user.id);
       const bytes = new Uint8Array(await photo.arrayBuffer());
